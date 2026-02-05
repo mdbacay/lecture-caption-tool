@@ -10,7 +10,7 @@ const port = 3001;
 app.use(cors());
 
 // This lets the server understand JSON data
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Test route
 app.get('/api/test', (req, res) => {
@@ -33,6 +33,43 @@ app.get('/api/test-google', async (req, res) => {
     res.json({ message: 'Google Speech-to-Text API connected successfully!' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to connect to Google API', details: error.message });
+  }
+});
+
+// Route to receive audio and transcribe it
+app.post('/api/transcribe', async (req, res) => {
+  try {
+    const audioBytes = req.body.audio;
+    
+    // Configure Google Speech-to-Text
+    const client = new speech.SpeechClient();
+    const audio = {
+      content: audioBytes,
+    };
+    const config = {
+      encoding: 'WEBM_OPUS',
+      sampleRateHertz: 48000,
+      languageCode: 'en-US',
+    };
+    const request = {
+      audio: audio,
+      config: config,
+    };
+
+    // Send to Google and get transcription
+    const [response] = await client.recognize(request);
+    console.log('Google response:', JSON.stringify(response, null, 2));
+    console.log('Number of results:', response.results ? response.results.length : 0);
+
+    const transcription = response.results
+      .map(result => result.alternatives[0].transcript)
+      .join(' ');
+    
+    res.json({ text: transcription });
+    
+  } catch (error) {
+    console.error('Transcription error:', error);
+    res.status(500).json({ error: 'Transcription failed', details: error.message });
   }
 });
 

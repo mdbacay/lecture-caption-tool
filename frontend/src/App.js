@@ -5,21 +5,16 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [captions, setCaptions] = useState("");
   const [summary, setSummary] = useState("");
+  const [mediaRecorder, setMediaRecorder] = useState(null);
 
-  const handleRecordToggle = () => {
+  const handleRecordToggle = async () => {
     if (isRecording) {
       // Stop recording
       setIsRecording(false);
-
-      // Send the transcript to the backend and get a summary back
-      fetch('http://localhost:3001/api/summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: captions })
-      })
-        .then(response => response.json())
-        .then(data => setSummary(data.summary))
-        .catch(error => console.error('Error:', error));
+      
+      if (mediaRecorder) {
+        mediaRecorder.stop();
+      }
 
     } else {
       // Start recording
@@ -27,17 +22,70 @@ function App() {
       setCaptions("");
       setSummary("");
 
-      // Simulate captions appearing over time
-      const demoText = "Welcome to the lecture caption tool. This is a demonstration of how captions will appear in real time as the speaker talks. Each word appears automatically creating a smooth captioning experience for students.";
-      const words = demoText.split(" ");
-      let currentText = "";
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const recorder = new MediaRecorder(stream);
+        setMediaRecorder(recorder);
 
-      words.forEach((word, index) => {
-        setTimeout(() => {
-          currentText += word + " ";
-          setCaptions(currentText);
-        }, index * 500);
-      });
+        const audioChunks = [];
+
+        // Collect all audio chunks
+        recorder.ondataavailable = (event) => {
+          audioChunks.push(event.data);
+        };
+
+        // When recording stops, send all audio to backend
+        recorder.onstop = async () => {
+          console.log('Recording stopped, processing audio...');
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          
+          // Convert to base64
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64Audio = reader.result.split(',')[1];
+            
+            setCaptions("Processing transcription...");
+            
+            try {
+              const response = await fetch('http://localhost:3001/api/transcribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ audio: base64Audio })
+              });
+              
+              const data = await response.json();
+              console.log('Backend response:', data);
+              
+              if (data.text) {
+                setCaptions(data.text);
+                
+                // Now get summary
+                const summaryResponse = await fetch('http://localhost:3001/api/summary', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ transcript: data.text })
+                });
+                const summaryData = await summaryResponse.json();
+                setSummary(summaryData.summary);
+              } else {
+                setCaptions("No speech detected. Please try again.");
+              }
+            } catch (error) {
+              console.error('Error:', error);
+              setCaptions("Error processing audio. Please try again.");
+            }
+          };
+        };
+
+        recorder.start();
+        setCaptions("Recording... Speak now!");
+
+      } catch (error) {
+        console.error('Microphone error:', error);
+        alert('Could not access microphone.');
+        setIsRecording(false);
+      }
     }
   };
 
