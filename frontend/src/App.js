@@ -97,7 +97,7 @@ function App() {
         {isRecording ? "Stop Recording" : "Start Recording"}
       </button>
 
-      {isRecording && (
+      {(isRecording || captions) && (
         <div className="captions-container">
           <h2>Live Captions</h2>
           <div className="captions">
